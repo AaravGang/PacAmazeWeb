@@ -44,7 +44,7 @@ wallwidth = min(WIDTH // 10, 8)  # WIDTH OF EVERY WALL
 pointRadius = min(WIDTH // 10, 8)
 
 animate_generation = False
-FPS = 10
+FPS = 25
 
 # COLORS
 KHAKI = (240, 230, 140)
@@ -965,7 +965,7 @@ async def main(player, chasers, level):
                 if maze_created:  # and event.key == pygame.K_SPACE:
                     touch = event.touch
                     if touch:
-                        FPS = 30
+                        FPS = 35
                     run = False
                     break
 
