@@ -1,6 +1,8 @@
 # MAZE CREATOR USING RANDOMISED DFS AND BACKTRACKING
 # PATH GENERATION USING DFS AND BFS (ANY ONE)
 import asyncio
+import pygame  # USE PYGAME TO CREATE THE  GUI
+
 import random  # FOR RANDOMISING THE MAZE
 import time  # FOR KEEPING TRACK OF HOW MUCH TIME IT TAKES TO GENERATE THE MAZE
 from queue import (
@@ -8,16 +10,18 @@ from queue import (
     Queue as fifo,
 )  # LIFO- USED FOR BACKTRACKING & DFS, AND FIFO- USED FOR BFS
 
-import pygame  # USE PYGAME TO CREATE THE  GUI
+from threading import Thread
 
 
 pygame.init()
+
+
 infoObject = pygame.display.Info()
 
 pygame.font.init()
 
 # mouse related vars
-minSwipe = 30
+minSwipe = 0
 
 # GLOBAL VARIABLES RELATED TO DRAWING THE MAZE
 LENGTH, BREADTH = (
@@ -184,6 +188,8 @@ class Cell:
         self.point = True
         self.chaserImg = None
 
+        self._show = False
+
     def reinit(self):
         self.visited = False  # IS IT VISITED OR NOT, USED WHILE MAZE MAKING
         self.searched = False  # IS IT SEARCHED OR NOT, USED WHILE PATH FINDING
@@ -206,6 +212,7 @@ class Cell:
         self.chaserHost = False
         self.point = True
         self.chaserImg = None
+        self._show = False
 
     # THIS FUNCTION CHECKS ALL UNVISITED NEIGHBOURS OF A CELL AND RETURNS A RANDOM ONE IF IT DOES
     def get_neighbour(self, grid):
@@ -309,11 +316,8 @@ class Cell:
         self.chaserImg = img
 
     # make player
-    def make_player(self, player_img):
+    def make_player_host(self):
         self.playerHost = True
-        self.playerImg = (
-            player_img  # start the player facing right (if this call if the player)
-        )
 
     # HIGHLIGHT ANY CELL FOR DEBUGGING
     def highlight(self, win):
@@ -321,129 +325,162 @@ class Cell:
         pygame.display.flip()
 
     # logic to move player or chaser
-    def move(self, win, grid, player=None, swipe=-1):
+    def move(self, grid, player_host):
 
         if self.playerHost and self.chaserHost:
             return {"defeat": True}  # game over
 
-        # logic for moving player
-        elif self.playerHost:
-            score_inc = 0
-            if self.point:
-                self.point = False
-                score_inc += 1
-                self.show(win)
-                pygame.display.update()
-
-            new_player = self
-            keys = pygame.key.get_pressed()
-
-            if (keys[pygame.K_RIGHT] or swipe == 1) and not self.right:
-                self.playerHost = False
-                self.show(win)
-
-                new_player = grid[self.row][self.col + 1]
-                new_player.make_player(player_img=playerR)
-                new_player.show(win)
-
-                pygame.display.update()
-
-            elif (keys[pygame.K_LEFT] or swipe == 2) and not self.left:
-                self.playerHost = False
-                self.show(win)
-
-                new_player = grid[self.row][self.col - 1]
-                new_player.make_player(player_img=playerL)
-                new_player.show(win)
-
-                pygame.display.update()
-
-            elif (keys[pygame.K_DOWN] or swipe == 3) and not self.bottom:
-                self.playerHost = False
-                self.show(win)
-
-                new_player = grid[self.row + 1][self.col]
-                new_player.make_player(player_img=playerD)
-                new_player.show(win)
-
-                pygame.display.update()
-
-            elif (keys[pygame.K_UP] or swipe == 4) and not self.top:
-                self.playerHost = False
-                self.show(win)
-
-                new_player = grid[self.row - 1][self.col]
-                new_player.make_player(player_img=playerU)
-                new_player.show(win)
-
-                pygame.display.update()
-
-            return {"player": new_player, "score_gained": score_inc}
-
         # logic for moving chaser
         elif self.chaserHost:
-            new_chaser = bfs(self, player, grid)
+            new_chaser = bfs(self, player_host, grid)
 
             # dont want both chasers to merge
             if not new_chaser.chaserHost:
                 self.chaserHost = False
                 new_chaser.make_chaser(self.chaserImg)
                 self.chaserImg = None
-                self.show(win)
-                new_chaser.show(win)
-                pygame.display.update()
+                self.show()
+                new_chaser.show()
 
                 return {"chaser": new_chaser}
             return {"chaser": self}
 
+    def show_(self, win, force=False):
+        if self._show or force:
+            # DRAW A RECTANGLE WITH THE DIMENSIONS OF THE CELL, TO COLOR IT
+            pygame.draw.rect(win, self.color, (self.x, self.y, WIDTH, WIDTH), 0)
+
+            # DRAW RIGHT, LEFT, TOP, BOTTOM WALLS
+            if self.right:  # RIGHT
+                pygame.draw.line(
+                    win,
+                    self.line_color,
+                    (self.x + WIDTH, self.y),
+                    (self.x + WIDTH, self.y + WIDTH),
+                    width=wallwidth,
+                )
+            if self.left:  # LEFT
+                pygame.draw.line(
+                    win,
+                    self.line_color,
+                    (self.x, self.y),
+                    (self.x, self.y + WIDTH),
+                    width=wallwidth,
+                )
+            if self.top:  # TOP
+                pygame.draw.line(
+                    win,
+                    self.line_color,
+                    (self.x, self.y),
+                    (self.x + WIDTH, self.y),
+                    width=wallwidth,
+                )
+            if self.bottom:  # BOTTOM
+                pygame.draw.line(
+                    win,
+                    self.line_color,
+                    (self.x, self.y + WIDTH),
+                    (self.x + WIDTH, self.y + WIDTH),
+                    width=wallwidth,
+                )
+
+            # draw appropriate images
+            if self.point:
+                pygame.draw.circle(
+                    win, KHAKI, (self.x + WIDTH // 2, self.y + WIDTH // 2), pointRadius
+                )
+            if self.chaserHost:
+                win.blit(self.chaserImg, (self.x + WIDTH // 4, self.y + WIDTH // 4))
+
+            self._show = False
+
     # THIS FUNCTION SHOWS THE CELL ON PYGAME WINDOW
-    def show(self, win):
-        # DRAW A RECTANGLE WITH THE DIMENSIONS OF THE CELL, TO COLOR IT
-        pygame.draw.rect(win, self.color, (self.x, self.y, WIDTH, WIDTH), 0)
+    def show(self):
+        self._show = True
 
-        # DRAW RIGHT, LEFT, TOP, BOTTOM WALLS
-        if self.right:  # RIGHT
-            pygame.draw.line(
-                win,
-                self.line_color,
-                (self.x + WIDTH, self.y),
-                (self.x + WIDTH, self.y + WIDTH),
-                width=wallwidth,
-            )
-        if self.left:  # LEFT
-            pygame.draw.line(
-                win,
-                self.line_color,
-                (self.x, self.y),
-                (self.x, self.y + WIDTH),
-                width=wallwidth,
-            )
-        if self.top:  # TOP
-            pygame.draw.line(
-                win,
-                self.line_color,
-                (self.x, self.y),
-                (self.x + WIDTH, self.y),
-                width=wallwidth,
-            )
-        if self.bottom:  # BOTTOM
-            pygame.draw.line(
-                win,
-                self.line_color,
-                (self.x, self.y + WIDTH),
-                (self.x + WIDTH, self.y + WIDTH),
-                width=wallwidth,
-            )
 
-        # draw appropriate images
-        if self.point:
-            pygame.draw.circle(
-                win, KHAKI, (self.x + WIDTH // 2, self.y + WIDTH // 2), pointRadius
-            )
-        if self.playerHost:
+# Player
+class Player(Cell):
+    def __init__(self, host, row, col, width_buffer, height_buffer):
+        super().__init__(row, col, width_buffer, height_buffer)
+        self.direction = 1
+        self.host = host
+        self.playerImg = playerR
+
+    def forward(
+        self, grid,
+    ):
+
+        score_inc = 0
+
+        if self.host.point:
+            self.host.point = False
+            score_inc += 1
+
+        self.host.show()
+
+        if self.host.chaserHost:
+            return {"defeat": True}
+
+        self.host.playerHost = False
+        new_host = self.host
+
+        if self.direction == 1 and not self.host.right:
+            new_host = grid[self.row][self.col + 1]
+        elif self.direction == 2 and not self.host.left:
+            new_host = grid[self.row][self.col - 1]
+        elif self.direction == 3 and not self.host.bottom:
+            new_host = grid[self.row + 1][self.col]
+        elif self.direction == 4 and not self.host.top:
+            new_host = grid[self.row - 1][self.col]
+
+        self.change_host(new_host)
+        new_host.make_player_host()
+        new_host.show()
+        self.show()
+
+        return {"score_gained": score_inc}
+
+    def change_host(self, host):
+        self.host = host
+        self.x, self.y = host.x, host.y
+        self.row, self.col = host.row, host.col
+
+    def move(self, swipe=0):
+        # logic for moving player
+
+        keys = pygame.key.get_pressed()
+
+        if (keys[pygame.K_RIGHT] or swipe == 1) and not self.host.right:
+            self.direction = 1
+            self.playerImg = playerR
+
+        elif (keys[pygame.K_LEFT] or swipe == 2) and not self.host.left:
+            self.direction = 2
+            self.playerImg = playerL
+
+        elif (keys[pygame.K_DOWN] or swipe == 3) and not self.host.bottom:
+            self.direction = 3
+            self.playerImg = playerD
+
+        elif (keys[pygame.K_UP] or swipe == 4) and not self.host.top:
+            self.direction = 4
+            self.playerImg = playerU
+
+    def get_moves(self):
+        if not self.host.right:
+            yield 1
+        if not self.host.left:
+            yield 2
+        if not self.host.bottom:
+            yield 3
+        if not self.host.top:
+            yield 4
+
+    def show_(self, win, force=False):
+        if self._show or force:
             win.blit(self.playerImg, (self.x + WIDTH // 4, self.y + WIDTH // 4))
-        if self.chaserHost:
-            win.blit(self.chaserImg, (self.x + WIDTH // 4, self.y + WIDTH // 4))
+            self._show = False
 
 
 # Simple button class
@@ -586,8 +623,8 @@ def removeWall(curr, next):
 
     # SHOW THE UPDATED VERSIONS OF THE CURRENT AND NEXT CELL
     if animate_generation:
-        curr.show(WIN)
-        next.show(WIN)
+        curr.show(WIN, True)
+        next.show(WIN, True)
         pygame.display.flip()
 
 
@@ -643,7 +680,7 @@ def maze_algorithm():
 
         # SHOW THE UPDATED CURRENT CELL
         if animate_generation:
-            current.show(WIN)
+            current.show(WIN, True)
             pygame.display.flip()
 
         # ---- STEP 2 DONE ---- ALGORITHM IS COMPLETE ----
@@ -660,13 +697,17 @@ def maze_algorithm():
 
 
 # show all the cells
-def draw_grid():
-    WIN.fill(BLACK)
+def draw_grid(player=None, chasers=[], force=False, fill=False, update=True):
+    if fill:
+        WIN.fill(BLACK)
     for i in range(rows):
         for j in range(cols):
-            GRID[i][j].show(WIN)
+            GRID[i][j].show_(WIN, force)
+    if player:
+        player.show_(WIN, force)
 
-    # pygame.draw.rect(WIN,TURQUOISE,(GRID[0][0].x,GRID[0][0].y,cols*WIDTH,rows*WIDTH),width=wallwidth)
+    for chaser in chasers:
+        chaser.show_(WIN, force)
 
     # blit_pic(centerPic, (WIDTH * (cols // 4) + wallwidth // 2), (WIDTH * (rows // 4)) + wallwidth // 2)
     write_text(
@@ -678,7 +719,8 @@ def draw_grid():
         True,
     )
 
-    pygame.display.update()
+    if update:
+        pygame.display.update()
 
 
 def write_text(font, color, text, x, y, fill=True, center=False):
@@ -696,7 +738,7 @@ def write_text(font, color, text, x, y, fill=True, center=False):
 
 
 # function to randomly remove a few walls to make it easy.
-def make_easy(difficulty=25):  # simplicity: 25 %
+def make_easy(difficulty=25):  # difficullty: 25 %
     for i in range(1, rows - 1):
         for j in range(1, cols - 1):
             if not GRID[i][j].blank:
@@ -732,16 +774,18 @@ def make_easy(difficulty=25):  # simplicity: 25 %
 
 def blit_pic(pic, x, y):
     WIN.blit(pic, (x, y))
-    pygame.display.update()
+    pygame.display.flip()
 
 
 # initialise all vars
 def restart(level=1):
     setup(create=False, grid=GRID)
-    # make_den()
 
-    player = GRID[0][0]
-    player.make_player(player_img=playerR)
+    playerHost = GRID[0][0]
+    playerHost.make_player_host()
+    player = Player(
+        playerHost, 0, 0, width_buffer=WIDTH_BUFFER, height_buffer=HEIGHT_BUFFER
+    )
 
     chasers = []
 
@@ -768,7 +812,7 @@ def restart(level=1):
         )
         chasers.append(chaser_temp)
 
-    draw_grid()
+    draw_grid(player=player, force=True, fill=True)
 
     return (
         player,
@@ -798,25 +842,109 @@ def getSwipeType(rel):
     return -1
 
 
+class Logic:
+    CHASER_SLOWER = 10
+    MAX_SWIPE_DELAY = 250  # ms
+
+    def __init__(self, data, touch):
+        self.data = data
+        self.__dict__.update(data)
+        self.max_score = self.level * rows * cols
+        self.run = True
+        self.touch = touch
+
+    async def move_player(self,):
+        while self.run:
+            clock.tick(FPS)
+            await asyncio.sleep(0)
+
+            if self.paused:
+                continue
+
+            # on pc, use keys
+            if not self.touch:
+                self.player.move()
+
+            # on mobile, use touch
+            else:
+                for move in self.player.get_moves():
+                    if move in self.swipes:
+                        ind = self.swipes.index(move)
+                        self.swipes = self.swipes[ind:]
+                        self.player.move(move)
+
+        return
+
+    async def mainloop(self,):
+        count = 0
+        while self.run:
+            clock.tick(FPS)
+            await asyncio.sleep(0)
+
+            if self.paused:
+                continue
+
+            count += 1
+
+            payload = self.player.forward(GRID)
+            defeat = payload.get("defeat")
+
+            if defeat:
+                self.defeat = True
+                self.run = False
+                break
+
+            self.score += (
+                payload.get("score_gained") if payload.get("score_gained") else 0
+            ) * self.level
+
+            if self.score > highscore:
+                change_highscore(self.score)
+
+            if self.score >= self.max_score:
+                self.victory = True
+                self.run = False
+                break
+
+            if count % self.CHASER_SLOWER == 0:
+                for ind, c in enumerate(self.chasers):
+                    payload = c.move(GRID, self.player.host)
+                    new_chaser = payload.get("chaser")
+                    defeat = payload.get("defeat")
+                    if defeat:
+                        self.defeat = True
+                        self.run = False
+                        break
+
+                    elif new_chaser:
+                        self.chasers[ind] = new_chaser
+
+                count = 0
+
+        return
+
+    def stop(self):
+        self.game_over = True
+        self.run = False
+
+
 # creates maze and then starts game
 async def main(player, chasers, level):
+    global FPS
     run = True  # WHILE THIS IS TRUE THE MAIN LOOP WILL RUN
 
-    # DRAW THE GRID
-    draw_grid()
     pygame.display.set_caption("Creating Maze...")
     print("Creating Maze...")
 
     # CREATE THE MAZE
     maze_algorithm()
-
-    make_easy(min(100, 75))  # randomly remove a few walls
-
-    draw_grid()
+    make_easy(75)  # randomly remove a few walls
+    draw_grid(player, force=True, fill=True)
 
     pygame.display.set_caption("Hit space to start game.")
     print("Maze Created...Hit space to start game.")
     maze_created = True
+    touch = False
 
     # THE MAIN GUI LOOP
     while run:
@@ -826,25 +954,28 @@ async def main(player, chasers, level):
                 run = False
                 pygame.quit()
                 quit()
+
             # IF THE USER PRESSES ANY KEY PROCEED TO THE FOLLOWING
-            if event.type == pygame.KEYDOWN or pygame.MOUSEBUTTONUP:
+            if event.type == pygame.KEYDOWN:
                 if maze_created:  # and event.key == pygame.K_SPACE:
+                    run = False
+                    break
+            #  IF THE USERS CLICKS ON THE SCREEN PROCEED
+            if event.type == pygame.MOUSEBUTTONUP:
+                if maze_created:  # and event.key == pygame.K_SPACE:
+                    touch = event.touch
+                    if touch:
+                        FPS = 30
                     run = False
                     break
 
         await asyncio.sleep(0)
-    await game(player, chasers, level)
+    await game(player, chasers, level, touch)
 
 
 # all the game logic
-async def game(player, chasers, level):
+async def game(player, chasers, level, touch):
     run = True
-
-    count = 0
-    score = 0
-
-    game_over = False
-    defeat = False
 
     pause_play = Button(
         pygame.Rect(
@@ -870,11 +1001,34 @@ async def game(player, chasers, level):
         lambda: True,
         **restart_button_style,
     )
-    score = 0
-
     pygame.display.set_caption(f"Level: {len(chasers)}")
     print("Game started.")
-    swipe = 0
+
+    data = {
+        "swipes": [],
+        "paused": False,
+        "defeat": False,
+        "game_over": False,
+        "player": player,
+        "chasers": chasers,
+        "score": 0,
+        "victory": False,
+        "level": level,
+    }
+
+    logic = Logic(data, touch)
+    main_logic = Thread(
+        target=asyncio.run, name="main-logic", args=(logic.mainloop(),), daemon=True
+    )
+    player_logic = Thread(
+        target=asyncio.run,
+        name="player-logic",
+        args=(logic.move_player(),),
+        daemon=True,
+    )
+
+    main_logic.start()
+    player_logic.start()
 
     while run:
         clock.tick(FPS)
@@ -883,64 +1037,40 @@ async def game(player, chasers, level):
         for e in pygame.event.get():
             if e.type == pygame.QUIT:
                 print("Quit via user interruption")
+                logic.stop()
                 pygame.quit()
                 quit()
 
             if e.type == pygame.MOUSEMOTION:
                 if e.touch:
-                    s = getSwipeType(e.rel)
-                    if s > 0:
-                        swipe = s
-
-            if e.type == pygame.KEYDOWN:
-                swipe = 0
+                    logic.swipes.append(getSwipeType(e.rel))
 
             if pause_play.check_event(e):
                 paused = not paused
+                logic.paused = paused
                 pause_play.image = play_img if paused else pause_img
 
             if restart_button.check_event(e):
+                logic.stop()
                 return await main(*restart(level))
 
         pause_play.update(WIN)
         restart_button.update(WIN)
+        write_text(
+            scoreFont, YELLOW, f"Score: {logic.score}", 10, 10, True,
+        )
 
-        pygame.display.update()
+        draw_grid(player=player, chasers=chasers, update=False)
 
-        if paused:
-            continue
-
-        if player:
-            payload = player.move(WIN, GRID, swipe=swipe)
-            count += 1
-
-            defeat = payload.get("defeat")
-            player = payload.get("player")
-            score += (
-                payload.get("score_gained") if payload.get("score_gained") else 0
-            ) * level
-
-            write_text(
-                scoreFont, YELLOW, f"Score: {score}", 10, 10, True,
-            )
-            if score > highscore:
-                change_highscore(score)
-            write_text(
-                scoreFont,
-                TURQUOISE,
-                f"High Score: {highscore}",
-                LENGTH - max(100, scoreFont.size(f"High Score: {highscore}")[0] + 10),
-                10,
-                True,
-            )
-
-        if game_over:
+        if logic.game_over:
             keys = pygame.key.get_pressed()
             if keys[pygame.K_RETURN] or pygame.mouse.get_pressed()[0]:
-                print("LEVEL:", level)
                 return await main(*restart(level))
 
-        elif score >= (rows * cols) * level:
+        elif paused:
+            continue
+
+        elif logic.victory:
             write_text(
                 pygame.font.Font("freesansbold.ttf", 100),
                 PURPLE,
@@ -955,10 +1085,9 @@ async def game(player, chasers, level):
             print("Game Over. Hit Enter to Restart.")
 
             level += 1
+            logic.stop()
 
-            game_over = True
-
-        elif defeat:
+        elif logic.defeat:
             write_text(
                 pygame.font.Font("freesansbold.ttf", 100),
                 PURPLE,
@@ -971,15 +1100,9 @@ async def game(player, chasers, level):
 
             pygame.display.set_caption("Hit Enter to Restart.")
             print("Game Over. Hit Enter to Restart.")
+            logic.stop()
 
-            game_over = True
-
-        elif count % 10 == 0:
-            for ind, c in enumerate(chasers):
-                new_chaser = c.move(WIN, GRID, player).get("chaser")
-                if new_chaser:
-                    chasers[ind] = new_chaser
-            count = 0
+        pygame.display.update()
 
 
 if __name__ == "__main__":
